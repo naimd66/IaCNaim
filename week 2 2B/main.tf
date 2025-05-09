@@ -45,26 +45,26 @@ resource "azurerm_network_interface" "nic" {
   }
 }
 
-resource "azurerm_network_security_group" "webserver" {
-  name                = "tls_webserver"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
+resource "azurerm_network_security_group" "nsg" {
+  name                = "iac-nsg"
+  location            = var.location
+  resource_group_name = data.azurerm_resource_group.main.name
   security_rule {
     access                     = "Allow"
     direction                  = "Inbound"
-    name                       = "tls"
-    priority                   = 100
+    name                       = "allow-ssh"
+    priority                   = 1001
     protocol                   = "Tcp"
     source_port_range          = "*"
     source_address_prefix      = "*"
-    destination_port_range     = "443"
-    destination_address_prefix = azurerm_network_interface.main.private_ip_address
+    destination_port_range     = "22"
+    destination_address_prefix = "*"
   }
 }
 
-resource "azurerm_network_interface_security_group_association" "main" {
-  network_interface_id      = azurerm_network_interface.internal.id
-  network_security_group_id = azurerm_network_security_group.webserver.id
+resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
+  subnet_id      = azurerm_subnet.subnet.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
 # Virtuele Machines
