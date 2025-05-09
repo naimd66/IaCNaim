@@ -1,4 +1,5 @@
 # Gebruik bestaande resource group
+
 data "azurerm_resource_group" "main" {
   name = var.resource_group_name
 }
@@ -20,7 +21,7 @@ resource "azurerm_subnet" "subnet" {
 }
 
 # Publieke IP’s
-resource "azurerm_public_ip" "public_ip" {
+resource "azurerm_public_ip" "pip" {
   count               = 2
   name                = "iac-pip-${count.index}"
   location            = var.location
@@ -40,21 +41,41 @@ resource "azurerm_network_interface" "nic" {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.subnet.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.public_ip[count.index].id
+    public_ip_address_id          = azurerm_public_ip.pip[count.index].id
   }
+}
+
+resource "azurerm_network_security_group" "webserver" {
+  name                = "tls_webserver"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  security_rule {
+    access                     = "Allow"
+    direction                  = "Inbound"
+    name                       = "tls"
+    priority                   = 100
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    source_address_prefix      = "*"
+    destination_port_range     = "443"
+    destination_address_prefix = azurerm_network_interface.main.private_ip_address
+  }
+}
+
+resource "azurerm_network_interface_security_group_association" "main" {
+  network_interface_id      = azurerm_network_interface.internal.id
+  network_security_group_id = azurerm_network_security_group.webserver.id
 }
 
 # Virtuele Machines
 resource "azurerm_linux_virtual_machine" "vm" {
-  count               = 2
-  name                = "iac-vm-${count.index}"
-  resource_group_name = data.azurerm_resource_group.main.name
-  location            = var.location
-  size                = "Standard_B2ats_v2"
-  admin_username      = "iac"
-  network_interface_ids = [
-    azurerm_network_interface.nic[count.index].id
-  ]
+  count                 = 2
+  name                  = "iac-vm-${count.index}"
+  resource_group_name   = data.azurerm_resource_group.main.name
+  location              = var.location
+  size                  = "Standard_B2ats_v2"
+  admin_username        = "iac"
+  network_interface_ids = [azurerm_network_interface.nic[count.index].id]
   disable_password_authentication = true
 
   admin_ssh_key {
@@ -67,6 +88,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
     caching              = "ReadWrite"
     storage_account_type = "Standard_LRS"
   }
+
   source_image_reference {
     publisher = "Canonical"
     offer     = "ubuntu-24_04-lts"
@@ -74,7 +96,6 @@ resource "azurerm_linux_virtual_machine" "vm" {
     version   = "latest"
   }
 
-  # CloudInit: hello.txt maken in /home/iac
   custom_data = base64encode(<<EOF
 #cloud-config
 write_files:
@@ -88,6 +109,6 @@ EOF
 
 # Output IP's naar bestand
 resource "local_file" "ip_output" {
-  content  = join("\n", azurerm_public_ip.public_ip[*].ip_address)
+  content  = join("\n", azurerm_public_ip.pip[*].ip_address)
   filename = "${path.module}/public_ips.txt"
 }
